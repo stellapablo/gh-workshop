@@ -1,16 +1,13 @@
-# Dockerfile de ejemplo para testing
-FROM node:18-alpine
+# Dockerfile de ejemplo para testing de seguridad
+FROM nginx:1.25-alpine
 
-WORKDIR /app
+# Copiar configuración personalizada si existe
+COPY workflows/ /usr/share/nginx/html/
 
-COPY package*.json ./
+# Exponer puerto 80
+EXPOSE 80
 
-RUN npm ci --only=production
+# Usuario no-root para seguridad
+USER nginx
 
-COPY . .
-
-EXPOSE 3000
-
-USER node
-
-CMD ["node", "index.js"]
+CMD ["nginx", "-g", "daemon off;"]
