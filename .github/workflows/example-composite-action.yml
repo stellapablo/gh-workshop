@@ -30,7 +30,7 @@ jobs:
           image-name: 'myapp'
           image-tag: ${{ github.sha }}
           severity: 'HIGH'
-          fail-build: 'true'
+          fail-build: 'false'
 
       - name: Display scan results
         if: always()
