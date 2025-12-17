@@ -74,11 +74,11 @@ jobs:
           image: ${{ steps.build.outputs.image }}
           args: --severity-threshold=${{ inputs.severity }}
 
-      - name: Upload Trivy scan results to GitHub Security
-        if: inputs.scanner == 'trivy' && always()
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: 'trivy-results.sarif'
+      # - name: Upload Trivy scan results to GitHub Security
+      #   if: inputs.scanner == 'trivy' && always()
+      #   uses: github/codeql-action/upload-sarif@v3
+      #   with:
+      #     sarif_file: 'trivy-results.sarif'
 
       - name: Generate scan summary
         id: scan-summary
@@ -106,6 +106,6 @@ jobs:
         with:
           name: security-scan-results
           path: |
-            trivy-results.sarif
+            # trivy-results.sarif
             snyk-report.json
           retention-days: 30
