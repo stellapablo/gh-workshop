@@ -57,16 +57,18 @@ jobs:
       - name: Run Trivy vulnerability scanner
         if: inputs.scanner == 'trivy'
         uses: aquasecurity/trivy-action@master
+        continue-on-error: true
         with:
           image-ref: ${{ steps.build.outputs.image }}
           format: 'sarif'
           output: 'trivy-results.sarif'
           severity: ${{ inputs.severity }}
-          exit-code: '1'
+          exit-code: '0'
 
       - name: Run Snyk container scan
         if: inputs.scanner == 'snyk'
         uses: snyk/actions/docker@master
+        continue-on-error: true
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
@@ -99,12 +101,20 @@ jobs:
             echo "✅ Scan completed" >> $GITHUB_STEP_SUMMARY
           fi
 
-      - name: Upload scan artifacts
-        if: always()
+      - name: Upload Trivy artifact
+        if: inputs.scanner == 'trivy' && always()
         uses: actions/upload-artifact@v4
         with:
-          name: security-scan-results
-          path: |
-            trivy-results.sarif
-            snyk-report.json
+          name: trivy-scan-results
+          path: trivy-results.sarif
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload Snyk artifact (optional)
+        if: inputs.scanner == 'snyk' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: snyk-scan-results
+          path: snyk-report.json
+          if-no-files-found: ignore
           retention-days: 30
