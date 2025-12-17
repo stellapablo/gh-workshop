@@ -1,0 +1,83 @@
+name: 'Docker Image Security Scan'
+description: 'Composite action to scan Docker images for vulnerabilities'
+author: 'Pablo'
+
+inputs:
+  image-name:
+    description: 'Docker image name to scan'
+    required: true
+  image-tag:
+    description: 'Docker image tag'
+    required: false
+    default: 'latest'
+  severity:
+    description: 'Minimum severity level (LOW, MEDIUM, HIGH, CRITICAL)'
+    required: false
+    default: 'HIGH'
+  fail-build:
+    description: 'Whether to fail the build on vulnerabilities'
+    required: false
+    default: 'true'
+
+outputs:
+  vulnerabilities-count:
+    description: 'Number of vulnerabilities found'
+    value: ${{ steps.scan.outputs.count }}
+  scan-status:
+    description: 'Status of the scan (passed/failed)'
+    value: ${{ steps.scan.outputs.status }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Run Trivy scanner
+      id: trivy
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: ${{ inputs.image-name }}:${{ inputs.image-tag }}
+        format: 'json'
+        output: 'trivy-results.json'
+        severity: ${{ inputs.severity }}
+        exit-code: '0'
+
+    - name: Parse scan results
+      id: scan
+      shell: bash
+      run: |
+        if [ -f "trivy-results.json" ]; then
+          VULN_COUNT=$(jq '[.Results[]?.Vulnerabilities[]?] | length' trivy-results.json)
+          echo "count=$VULN_COUNT" >> $GITHUB_OUTPUT
+          
+          if [ "$VULN_COUNT" -eq 0 ]; then
+            echo "status=passed" >> $GITHUB_OUTPUT
+            echo "✅ No vulnerabilities found at ${{ inputs.severity }} level or above" | tee -a $GITHUB_STEP_SUMMARY
+          else
+            echo "status=failed" >> $GITHUB_OUTPUT
+            echo "⚠️ Found $VULN_COUNT vulnerabilities at ${{ inputs.severity }} level or above" | tee -a $GITHUB_STEP_SUMMARY
+            
+            # Detailed summary
+            echo "## Vulnerability Summary" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`json" >> $GITHUB_STEP_SUMMARY
+            jq '.Results[]?.Vulnerabilities[]? | {ID: .VulnerabilityID, Severity: .Severity, Package: .PkgName}' trivy-results.json | head -20 >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          fi
+        else
+          echo "count=0" >> $GITHUB_OUTPUT
+          echo "status=error" >> $GITHUB_OUTPUT
+          echo "❌ Scan failed to complete" | tee -a $GITHUB_STEP_SUMMARY
+        fi
+
+    - name: Fail on vulnerabilities
+      if: inputs.fail-build == 'true' && steps.scan.outputs.status == 'failed'
+      shell: bash
+      run: |
+        echo "Build failed due to security vulnerabilities"
+        exit 1
+
+    - name: Upload results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: trivy-scan-results
+        path: trivy-results.json
+        retention-days: 30

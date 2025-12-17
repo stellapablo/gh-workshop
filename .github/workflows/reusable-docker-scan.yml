@@ -1,0 +1,110 @@
+name: Reusable Docker Scan
+
+on:
+  workflow_call:
+    inputs:
+      image-name:
+        description: 'Docker image name to scan'
+        required: true
+        type: string
+      image-tag:
+        description: 'Docker image tag to scan'
+        required: false
+        type: string
+        default: 'latest'
+      severity:
+        description: 'Minimum severity level to fail the build'
+        required: false
+        type: string
+        default: 'HIGH'
+      scanner:
+        description: 'Scanner to use (trivy or snyk)'
+        required: false
+        type: string
+        default: 'trivy'
+    secrets:
+      SNYK_TOKEN:
+        description: 'Snyk token for authentication'
+        required: false
+    outputs:
+      scan-result:
+        description: 'Scan result status'
+        value: ${{ jobs.scan.outputs.result }}
+      vulnerabilities-found:
+        description: 'Number of vulnerabilities found'
+        value: ${{ jobs.scan.outputs.vuln-count }}
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    outputs:
+      result: ${{ steps.scan-summary.outputs.result }}
+      vuln-count: ${{ steps.scan-summary.outputs.count }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        id: build
+        run: |
+          docker build -t ${{ inputs.image-name }}:${{ inputs.image-tag }} .
+          echo "image=${{ inputs.image-name }}:${{ inputs.image-tag }}" >> $GITHUB_OUTPUT
+
+      - name: Run Trivy vulnerability scanner
+        if: inputs.scanner == 'trivy'
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.build.outputs.image }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: ${{ inputs.severity }}
+          exit-code: '1'
+
+      - name: Run Snyk container scan
+        if: inputs.scanner == 'snyk'
+        uses: snyk/actions/docker@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          image: ${{ steps.build.outputs.image }}
+          args: --severity-threshold=${{ inputs.severity }}
+
+      - name: Upload Trivy scan results to GitHub Security
+        if: inputs.scanner == 'trivy' && always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: Generate scan summary
+        id: scan-summary
+        if: always()
+        run: |
+          if [ -f "trivy-results.sarif" ]; then
+            VULN_COUNT=$(jq '.runs[0].results | length' trivy-results.sarif)
+            echo "count=$VULN_COUNT" >> $GITHUB_OUTPUT
+            if [ "$VULN_COUNT" -eq 0 ]; then
+              echo "result=passed" >> $GITHUB_OUTPUT
+              echo "✅ No vulnerabilities found" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "result=vulnerabilities-found" >> $GITHUB_OUTPUT
+              echo "⚠️ Found $VULN_COUNT vulnerabilities" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "result=completed" >> $GITHUB_OUTPUT
+            echo "count=0" >> $GITHUB_OUTPUT
+            echo "✅ Scan completed" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload scan artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-scan-results
+          path: |
+            trivy-results.sarif
+            snyk-report.json
+          retention-days: 30
