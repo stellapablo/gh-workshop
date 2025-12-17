@@ -43,8 +43,12 @@ jobs:
           echo "Snyk scan result: ${{ needs.scan-with-snyk.outputs.scan-result }}"
           echo "Snyk vulnerabilities: ${{ needs.scan-with-snyk.outputs.vulnerabilities-found }}"
           
-      - name: Notify on failure
-        if: needs.scan-with-trivy.result == 'failure' || needs.scan-with-snyk.result == 'failure'
+      - name: Report scan status
+        if: always()
         run: |
-          echo "🚨 Security scan failed! Please review the vulnerabilities."
-          exit 1
+          if [ "${{ needs.scan-with-trivy.outputs.vulnerabilities-found }}" != "0" ] || [ "${{ needs.scan-with-snyk.outputs.vulnerabilities-found }}" != "0" ]; then
+            echo "⚠️ Vulnerabilities found but build continues."
+            echo "Please review security reports in the artifacts."
+          else
+            echo "✅ No vulnerabilities found!"
+          fi

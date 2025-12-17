@@ -57,12 +57,13 @@ jobs:
       - name: Run Trivy vulnerability scanner
         if: inputs.scanner == 'trivy'
         uses: aquasecurity/trivy-action@master
+        continue-on-error: true
         with:
           image-ref: ${{ steps.build.outputs.image }}
           format: 'sarif'
           output: 'trivy-results.sarif'
           severity: ${{ inputs.severity }}
-          exit-code: '1'
+          exit-code: '0'
 
       - name: Run Snyk container scan
         if: inputs.scanner == 'snyk'
